@@ -1,13 +1,13 @@
 {
   "name": "turkiyecraft-bot",
   "version": "1.0.0",
-  "description": "TürkiyeCraft Discord Botu",
+  "description": "TürkiyeCraft Discord Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.65",
-    "discord.js": "^14.18.0"
+    "better-sqlite3": "^11.0.0",
+    "discord.js": "^14.14.0"
   }
 }
