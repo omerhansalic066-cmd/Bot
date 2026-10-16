@@ -1,7 +1,7 @@
 const { 
     Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, 
     ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits, ModalBuilder, 
-    TextInputBuilder, TextInputStyle, StringSelectMenuBuilder 
+    TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, AuditLogEvent 
 } = require('discord.js');
 require('dotenv').config();
 
@@ -12,14 +12,15 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageReactions
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildModeration
     ],
-    partials: [Partials.Channel, Partials.Message, Partials.User, Partials.GuildMember]
+    partials: [Partials.Channel, Partials.Message, Partials.User, Partials.GuildMember, Partials.Reaction]
 });
 
 // --- VERİTABANI / BELLEK ---
-const userCredits = new Map(); // Kredi sistemi için geçici bellek
-const tempChannels = new Map(); // Geçici ses odaları için
+const userCredits = new Map(); // Kredi sistemi
+const tempChannels = new Map(); // Geçici ses odaları için JTC takibi
 
 // --- SABİT BİLGİLER VE ID'LER ---
 const SERVER_NAME = "TürkiyeCraft";
@@ -30,7 +31,7 @@ const ROLES = {
     destekEkibi: "1542296519628034128",
     genelDestek: "1555291620876750918",
     skyblockDestek: "1555291670151561227",
-    onayli: "1555294900520493118",
+    onayli: "1555294900520493118", // Otomatik verilecek Oyuncu rolü
     vip: "1555294079921819849",
     rutbeler: {
         netherite: "1555989344530202805",
@@ -56,14 +57,15 @@ const CHANNELS = {
     basvuruPanel: "1556051449723748443",
     marketRol: "1555989121808465981",
     kurallar: "1542141049118527568",
-    geciciKurma: "1542194628332101694",
-    geciciKategori: "1542194376032129125"
+    geciciKurma: "1542194628332101694", // JTC Oda Oluştur Kanalı
+    geciciKategori: "1542194376032129125",
+    hosgeldinKanal: "1542141049118527568" // Hoş geldin mesajının gideceği kanal (İstediğin ID ile değiştirebilirsin)
 };
 
 const OWNERS = ["1430625826902114396", "1452002283389849690", "1429198833832951808"];
 
 client.once('ready', async () => {
-    console.log(`${client.user.tag} başarıyla giriş yaptı!`);
+    console.log(`🤖 ${client.user.tag} başarıyla aktif edildi!`);
     
     // Slash Komutları Kaydı
     const commands = [
@@ -80,37 +82,107 @@ client.once('ready', async () => {
         { name: 'ticket-son', description: 'Destek talebini çözer ve kapatır' },
         { name: 'zar', description: 'Zar atar (1-6)' },
         { name: 'yazıtura', description: 'Yazı tura atar' },
-        { name: 'günlüködül', description: 'Günlük rastgele kredi toplarsın' }
+        { name: 'günlüködül', description: 'Günlük rastgele kredi toplarsın' },
+        { 
+            name: 'çekiliş-yap', 
+            description: 'Çekiliş başlatır (Kurucu)', 
+            options: [
+                { name: 'sure', type: 4, description: 'Süre (Dakika)', required: true },
+                { name: 'kazanan_sayisi', type: 4, description: 'Kazanan sayısı', required: true },
+                { name: 'odul', type: 3, description: 'Çekiliş Ödülü', required: true }
+            ] 
+        }
     ];
 
-    await client.application.commands.set(commands);
+    try {
+        await client.application.commands.set(commands);
+        console.log("⚡ Slash komutları başarıyla senkronize edildi!");
+    } catch (error) {
+        console.error("Slash komutları yüklenirken hata oluştu:", error);
+    }
 });
 
-// --- MESAJ & KORUMA & OTO YANIT SİSTEMİ ---
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-
-    // Küfür & Reklam Basit Koruma
-    const kufurler = ["küfür1", "küfür2", "discord.gg/", "http://", "https://"];
-    if (kufurler.some(k => message.content.toLowerCase().includes(k))) {
-        if (!OWNERS.includes(message.author.id)) {
-            message.delete().catch(() => {});
-            return message.channel.send(`${message.author}, bu sunucuda küfür veya reklam yasaktır!`).then(msg => setTimeout(() => msg.delete(), 4000));
+// --- WELCOME (HOŞ GELDİN & OTOMATİK ROL) ---
+client.on('guildMemberAdd', async member => {
+    // 1. Otomatik Oyuncu Rolü Verme
+    try {
+        if (ROLES.onayli) {
+            await member.roles.add(ROLES.onayli);
         }
+    } catch (err) {
+        console.error("Otomatik rol verilirken hata oluştu:", err);
     }
 
-    // Büyük Harf Koruması (%70 üzeri büyük harfse)
-    if (message.content.length > 10) {
+    // 2. Karşılama Mesajı Gönderme
+    const welcomeChannel = member.guild.channels.cache.get(CHANNELS.hosgeldinKanal);
+    if (welcomeChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle(`🎉 TürkiyeCraft'a Hoş Geldin ${member.user.username}!`)
+            .setDescription(`Aramıza katıldığın için çok mutluyuz! Sunucuda keyifli vakit geçirmeni dileriz.\n\n📜 Kuralları okumayı unutma: <#${CHANNELS.kurallar}>\n💬 Toplam Üye Sayımız: **${member.guild.memberCount}**`)
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+            .setColor("Green")
+            .setFooter({ text: FOOTER_TEXT });
+
+        welcomeChannel.send({ content: `Hey ${member}, sunucumuza hoş geldin! 👋`, embeds: [embed] }).catch(() => {});
+    }
+});
+
+// --- ANTI-BOT / KURUCU KORUMASI ---
+client.on('guildMemberAdd', async member => {
+    if (!member.user.bot) return; // Sadece bot eklemelerini denetle
+
+    try {
+        const fetchedLogs = await member.guild.fetchAuditLogs({
+            limit: 1,
+            type: AuditLogEvent.BotAdd,
+        });
+        const botLog = fetchedLogs.entries.first();
+
+        if (botLog) {
+            const { executor } = botLog;
+            // Botu ekleyen kişi kurucu değilse botu at
+            if (!OWNERS.includes(executor.id)) {
+                await member.kick("İzinsiz Bot Ekleme Koruması - Kurucu Değil");
+                console.log(`🛡️ Bot Koruması: ${member.user.tag} isimli izinsiz bot ${executor.tag} tarafından eklendiği için atıldı!`);
+            }
+        } else {
+            // Log bulunamazsa tedbiren at
+            await member.kick("İzinsiz Bot Koruması");
+        }
+    } catch (err) {
+        console.error("Anti-Bot koruması çalışırken hata oluştu:", err);
+    }
+});
+
+// --- ANTICHAT / MODERASYON & OTO YANITLAR ---
+client.on('messageCreate', async message => {
+    if (message.author.bot || !message.guild) return;
+
+    // Kurucular muaf tutulur
+    if (OWNERS.includes(message.author.id)) return;
+
+    const content = message.content.toLowerCase();
+
+    // 1. Reklam ve Küfür Filtresi
+    const engelliKelimeler = ["discord.gg/", "http://", "https://", "www.", ".com", ".net", ".org", "küfür1", "küfür2"];
+    if (engelliKelimeler.some(k => content.includes(k))) {
+        message.delete().catch(() => {});
+        return message.channel.send(`⚠️ ${message.author}, bu sunucuda reklam, link veya küfür paylaşımı yapmak yasaktır!`)
+            .then(msg => setTimeout(() => msg.delete().catch(() => {}), 4000));
+    }
+
+    // 2. Büyük Harf (CAPS) Koruması
+    if (message.content.length > 8) {
         const uppercaseCount = message.content.replace(/[^A-ZÇĞİÖŞÜ]/g, "").length;
         if ((uppercaseCount / message.content.length) > 0.7) {
             message.delete().catch(() => {});
-            return message.channel.send(`${message.author}, lütfen büyük harf kullanımına dikkat et!`).then(msg => setTimeout(() => msg.delete(), 4000));
+            return message.channel.send(`⚠️ ${message.author}, lütfen büyük harf kullanımına dikkat et!`)
+                .then(msg => setTimeout(() => msg.delete().catch(() => {}), 4000));
         }
     }
 
-    // Otomatik Yanıtlar
-    const content = message.content.toLowerCase();
-    if (content.includes("sa") || content.includes("selamın aleyküm")) {
+    // 3. Otomatik Yanıtlar
+    if (content === "sa" || content === "selam" || content === "selamın aleyküm") {
         message.reply("Aleykümselam, hoş geldin TürkiyeCraft oyuncusu!");
     } else if (content.includes("iyi akşamlar")) {
         message.reply("Sana da iyi akşamlar! Keyifli oyunlar dileriz.");
@@ -118,51 +190,57 @@ client.on('messageCreate', async message => {
         message.reply("Günaydın! Bugün TürkiyeCraft'ta maceraya hazır mısın?");
     } else if (content.includes("tünaydın")) {
         message.reply("Tünaydın! Oyun keyfin bol olsun.");
-    } else if (content.includes("nasılsın") && content.includes(client.user.id)) {
-        message.reply("Ben bir TürkiyeCraft yapay zeka asistanıyım, çok iyiyim! Sen nasılsın?");
+    } else if (content.includes("nasılsın") && message.mentions.has(client.user)) {
+        message.reply("Ben TürkiyeCraft yapay zeka asistanıyım, gayet iyiyim! Sen nasılsın?");
     }
 });
 
-// --- GEÇİCİ SES ODA SİSTEMİ ---
+// --- GEÇİCİ SES ODA SİSTEMİ (JTC - Join to Create) ---
 client.on('voiceStateUpdate', async (oldState, newState) => {
-    // Oda kurma kanalına girdiyse
+    // Kullanıcı "Oda Oluştur" kanalına girdiyse
     if (newState.channelId === CHANNELS.geciciKurma) {
         const guild = newState.guild;
         const member = newState.member;
 
-        const channel = await guild.channels.create({
-            name: `${member.user.username}'in Odası`,
-            type: ChannelType.GuildVoice,
-            parent: CHANNELS.geciciKategori,
-            permissionOverwrites: [
-                { id: guild.id, allow: [PermissionFlagsBits.Connect] },
-                { id: member.id, allow: [PermissionFlagsBits.ManageChannels, PermissionFlagsBits.MuteMembers, PermissionFlagsBits.DeafenMembers] }
-            ]
-        });
+        try {
+            const channel = await guild.channels.create({
+                name: `🔊 ${member.user.username}'in Odası`,
+                type: ChannelType.GuildVoice,
+                parent: CHANNELS.geciciKategori || null,
+                permissionOverwrites: [
+                    { id: guild.id, allow: [PermissionFlagsBits.Connect] },
+                    { id: member.id, allow: [PermissionFlagsBits.ManageChannels, PermissionFlagsBits.MuteMembers, PermissionFlagsBits.DeafenMembers, PermissionFlagsBits.MoveMembers] }
+                ]
+            });
 
-        await member.voice.setChannel(channel);
-        tempChannels.set(channel.id, { owner: member.id, lastEmpty: Date.now() });
+            await member.voice.setChannel(channel);
+            tempChannels.set(channel.id, { owner: member.id, lastEmpty: Date.now() });
+        } catch (err) {
+            console.error("Geçici oda oluşturulurken hata oluştu:", err);
+        }
     }
-
-    // Odalar boş kalırsa silinme kontrolü (3dk)
-    setInterval(() => {
-        tempChannels.forEach(async (data, channelId) => {
-            const channel = client.channels.cache.get(channelId);
-            if (channel) {
-                if (channel.members.size === 0) {
-                    if (Date.now() - data.lastEmpty > 180000) { // 3 Dakika
-                        await channel.delete().catch(() => {});
-                        tempChannels.delete(channelId);
-                    }
-                } else {
-                    data.lastEmpty = Date.now();
-                }
-            }
-        });
-    }, 10000);
 });
 
-// --- ETKİLEŞİMLER (BUTONLAR, MENÜLER, MODALLAR, KOMUTLAR) ---
+// Boş kalan geçici odaları temizleme döngüsü (3 Dakika boş kalınca siler)
+setInterval(() => {
+    tempChannels.forEach(async (data, channelId) => {
+        const channel = client.channels.cache.get(channelId);
+        if (channel) {
+            if (channel.members.size === 0) {
+                if (Date.now() - data.lastEmpty > 180000) { // 3 Dakika
+                    await channel.delete().catch(() => {});
+                    tempChannels.delete(channelId);
+                }
+            } else {
+                data.lastEmpty = Date.now();
+            }
+        } else {
+            tempChannels.delete(channelId);
+        }
+    });
+}, 10000);
+
+// --- ETKİLEŞİMLER (KOMUTLAR, BUTONLAR, MODALLAR) ---
 client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
@@ -176,7 +254,8 @@ client.on('interactionCreate', async interaction => {
                     { name: '/günlüködül', value: 'Her gün rastgele kredi kazanırsınız.' },
                     { name: '/zar /yazıtura', value: 'Şans oyunları oynarsınız.' },
                     { name: '/temizle', value: 'Mesaj silersiniz (Yetkili).' },
-                    { name: '/ticket-son', value: 'Aktif talebi kapatır.' }
+                    { name: '/ticket-son', value: 'Aktif talebi kapatır.' },
+                    { name: '/çekiliş-yap', value: 'Hızlı çekiliş başlatır (Kurucu).' }
                 )
                 .setColor("Gold")
                 .setThumbnail(LOGO_URL)
@@ -186,7 +265,7 @@ client.on('interactionCreate', async interaction => {
 
         if (commandName === 'günlüködül') {
             const userId = interaction.user.id;
-            const kazanc = Math.floor(Math.random() * 20) + 10; // 10-30 arası kredi
+            const kazanc = Math.floor(Math.random() * 20) + 10;
             let mevcut = userCredits.get(userId) || 0;
             userCredits.set(userId, mevcut + kazanc);
 
@@ -197,7 +276,7 @@ client.on('interactionCreate', async interaction => {
             if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) return interaction.reply({ content: "Yetkin yok!", ephemeral: true });
             const sayi = interaction.options.getInteger('sayi');
             await interaction.channel.bulkDelete(sayi, true).catch(() => {});
-            await interaction.reply({ content: `${sayi} adet mesaj silindi.`, ephemeral: true });
+            await interaction.reply({ content: `🧹 **${sayi}** adet mesaj silindi.`, ephemeral: true });
         }
 
         if (commandName === 'krediekle') {
@@ -206,7 +285,7 @@ client.on('interactionCreate', async interaction => {
             const miktar = interaction.options.getInteger('miktar');
             let mevcut = userCredits.get(user.id) || 0;
             userCredits.set(user.id, mevcut + miktar);
-            await interaction.reply({ content: `${user.tag} adlı kullanıcıya ${miktar} kredi eklendi!` });
+            await interaction.reply({ content: `💳 ${user.tag} adlı kullanıcıya **${miktar}** kredi eklendi!` });
         }
 
         if (commandName === 'zar') {
@@ -219,11 +298,75 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply(`🎯 Sonuç: **${sonuc}**`);
         }
 
+        // GIVEAWAY / ÇEKİLİŞ SİSTEMİ
+        if (commandName === 'çekiliş-yap') {
+            if (!OWNERS.includes(interaction.user.id)) return interaction.reply({ content: "Bu komutu sadece kurucular kullanabilir!", ephemeral: true });
+
+            const sure = interaction.options.getInteger('sure');
+            const kazananSayisi = interaction.options.getInteger('kazanan_sayisi');
+            const odul = interaction.options.getString('odul');
+
+            const bitisZamani = Math.floor((Date.now() + sure * 60000) / 1000);
+
+            const embed = new EmbedBuilder()
+                .setTitle(`🎉 ÇEKİLİŞ: ${odul}`)
+                .setDescription(`Katılmak için aşağıdaki 🎉 butonuna tıklayın!\n\n⏳ **Bitiş:** <t:${bitisZamani}:R>\n👑 **Kazanan Sayısı:** ${kazananSayisi}\n👑 **Düzenleyen:** ${interaction.user}`)
+                .setColor("Purple")
+                .setFooter({ text: FOOTER_TEXT });
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('cekilis_katil').setLabel('Katıl 🎉').setStyle(ButtonStyle.Success)
+            );
+
+            const message = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
+            const katilanlar = new Set();
+
+            const collector = message.createMessageComponentCollector({ time: sure * 60000 });
+
+            collector.on('collect', async i => {
+                if (i.customId === 'cekilis_katil') {
+                    if (katilanlar.has(i.user.id)) {
+                        katilanlar.delete(i.user.id);
+                        await i.reply({ content: "Çekilişten katılımını çektin.", ephemeral: true });
+                    } else {
+                        katilanlar.add(i.user.id);
+                        await i.reply({ content: "🎉 Çekilişe başarıyla katıldın!", ephemeral: true });
+                    }
+                }
+            });
+
+            collector.on('end', async () => {
+                const katilanDizi = Array.from(katilanlar);
+                if (katilanDizi.length < kazananSayisi) {
+                    const kazananYokEmbed = new EmbedBuilder()
+                        .setTitle(`🎉 ÇEKİLİŞ BİTTİ: ${odul}`)
+                        .setDescription(`Yeterli katılım olmadığı için kazanan seçilemedi.\nToplanan Katılımcı: ${katilanDizi.length}`)
+                        .setColor("Red");
+                    await message.edit({ embeds: [kazananYokEmbed], components: [] });
+                } else {
+                    const kazananlar = [];
+                    for (let i = 0; i < kazananSayisi; i++) {
+                        const rastgele = Math.floor(Math.random() * katilanDizi.length);
+                        kazananlar.push(`<@${katilanDizi.splice(rastgele, 1)[0]}>`);
+                    }
+
+                    const kazananEmbed = new EmbedBuilder()
+                        .setTitle(`🎉 ÇEKİLİŞ SONUÇLANDI: ${odul}`)
+                        .setDescription(`🏆 **Kazananlar:** ${kazananlar.join(', ')}\n🎉 Tebrikler!`)
+                        .setColor("Gold")
+                        .setFooter({ text: FOOTER_TEXT });
+
+                    await message.edit({ embeds: [kazananEmbed], components: [] });
+                    await message.channel.send(`🎉 Tebrikler ${kazananlar.join(', ')}! **${odul}** kazandınız!`);
+                }
+            });
+        }
+
         if (commandName === 'ticket-son') {
             if (!interaction.channel.name.includes("talep-") && !interaction.channel.name.includes("basvuru-")) {
                 return interaction.reply({ content: "Bu komut sadece talep kanallarında kullanılabilir!", ephemeral: true });
             }
-            await interaction.reply({ content: "Talep sonlandırılıyor, loglanıyor ve kanal siliniyor..." });
+            await interaction.reply({ content: "Talep sonlandırılıyor ve kanal siliniyor..." });
             setTimeout(async () => {
                 await interaction.channel.delete().catch(() => {});
             }, 3000);
@@ -254,71 +397,20 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
         }
 
-        if (commandName === 'panelgönder' || commandName === 'panelleri_kur') {
+        if (commandName === 'panelgönder') {
             if (!OWNERS.includes(interaction.user.id)) return interaction.reply({ content: "Yetkiniz yok!", ephemeral: true });
-            
-            // Destek Paneli Gönderimi
-            const destekChan = client.channels.cache.get(CHANNELS.destekPanel);
-            if (destekChan) {
-                const embed = new EmbedBuilder()
-                    .setTitle(`${SERVER_NAME} Destek Sistemi`)
-                    .setDescription("Yaşadığınız sorunları bildirmek veya destek almak için aşağıdaki kategorilerden talep oluşturabilirsiniz.")
-                    .setThumbnail(LOGO_URL)
-                    .setColor("Blue")
-                    .setFooter({ text: FOOTER_TEXT });
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('talep_skyblock').setLabel('Skyblock Destek').setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder().setCustomId('talep_genel').setLabel('Genel Destek').setStyle(ButtonStyle.Secondary)
-                );
-                await destekChan.send({ embeds: [embed], components: [row] });
-            }
-
-            // Hesap Eşleme Paneli (Devre dışı bırakıldı buton)
-            const hesapChan = client.channels.cache.get(CHANNELS.hesapEslestirme);
-            if (hesapChan) {
-                const embed = new EmbedBuilder()
-                    .setTitle(`${SERVER_NAME} Hesap Eşleme`)
-                    .setDescription("Oyundaki hesabınızı Discord ile eşleyin.\n*Not: Şu an sistem devre dışıdır.*")
-                    .setThumbnail(LOGO_URL)
-                    .setColor("Grey")
-                    .setFooter({ text: FOOTER_TEXT });
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('hesap_esle').setLabel('Hesap Eşle (Devre Dışı)').setStyle(ButtonStyle.Danger).setDisabled(true)
-                );
-                await hesapChan.send({ embeds: [embed], components: [row] });
-            }
-
-            // Öneri Paneli
-            const oneriChan = client.channels.cache.get(CHANNELS.oneriPanel);
-            if (oneriChan) {
-                const embed = new EmbedBuilder().setTitle(`${SERVER_NAME} Öneri Sistemi`).setDescription("Sunucumuz için önerilerinizi bildirin.").setColor("Green").setFooter({ text: FOOTER_TEXT });
-                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('oneri_gonder').setLabel('Öneri Yap').setStyle(ButtonStyle.Success));
-                await oneriChan.send({ embeds: [embed], components: [row] });
-            }
-
-            // Hata Bildirim Paneli
-            const hataChan = client.channels.cache.get(CHANNELS.hataPanel);
-            if (hataChan) {
-                const embed = new EmbedBuilder().setTitle(`${SERVER_NAME} Hata Bildirim Sistemi`).setDescription("Gördüğünüz bug ve hataları bildirin.").setColor("Orange").setFooter({ text: FOOTER_TEXT });
-                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('hata_gonder').setLabel('Hata Bildir').setStyle(ButtonStyle.Danger));
-                await hataChan.send({ embeds: [embed], components: [row] });
-            }
-
-            // Başvuru Paneli
-            const basvuruChan = client.channels.cache.get(CHANNELS.basvuruPanel);
-            if (basvuruChan) {
-                const embed = new EmbedBuilder().setTitle(`${SERVER_NAME} Yetkili Başvuru`).setDescription("Ekibimize katılmak için başvuruda bulunun.").setColor("Purple").setFooter({ text: FOOTER_TEXT });
-                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('basvuru_yap').setLabel('Başvuru Oluştur').setStyle(ButtonStyle.Primary));
-                await basvuruChan.send({ embeds: [embed], components: [row] });
-            }
-
-            await interaction.reply({ content: "Tüm paneller başarıyla ilgili kanallara gönderildi!", ephemeral: true });
+            await sendAllPanels(interaction);
         }
     }
 
     // --- BUTON VE MODAL YÖNETİMLERİ ---
     if (interaction.isButton()) {
         const id = interaction.customId;
+
+        if (id === 'panelleri_kur') {
+            if (!OWNERS.includes(interaction.user.id)) return interaction.reply({ content: "Yetkiniz yok!", ephemeral: true });
+            await sendAllPanels(interaction, true);
+        }
 
         if (id === 'talep_skyblock' || id === 'talep_genel') {
             const kategori = id === 'talep_skyblock' ? "skyblock" : "genel";
@@ -330,9 +422,9 @@ client.on('interactionCreate', async interaction => {
                 parent: parentChan ? parentChan.id : null,
                 permissionOverwrites: [
                     { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-                    { id: ROLES.destekEkibi, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-                    { id: kategori === 'skyblock' ? ROLES.skyblockDestek : ROLES.genelDestek, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                    { id: ROLES.destekEkibi, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                    { id: kategori === 'skyblock' ? ROLES.skyblockDestek : ROLES.genelDestek, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
                 ]
             });
 
@@ -378,6 +470,10 @@ client.on('interactionCreate', async interaction => {
             
             modal.addComponents(new ActionRowBuilder().addComponents(ad), new ActionRowBuilder().addComponents(yas), new ActionRowBuilder().addComponents(sehir), new ActionRowBuilder().addComponents(deneyim));
             await interaction.showModal(modal);
+        }
+
+        if (id === 'oy_evet' || id === 'oy_hayir') {
+            await interaction.reply({ content: `Oyunuz kaydedildi: **${id === 'oy_evet' ? 'Evet 👍' : 'Hayır 👎'}**`, ephemeral: true });
         }
     }
 
@@ -445,4 +541,24 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-client.login(process.env.TOKEN);
+// --- PANELLERİ GÖNDERME FONKSİYONU ---
+async function sendAllPanels(interaction, isEphemeral = false) {
+    const destekChan = client.channels.cache.get(CHANNELS.destekPanel);
+    if (destekChan) {
+        const embed = new EmbedBuilder()
+            .setTitle(`${SERVER_NAME} Destek Sistemi`)
+            .setDescription("Yaşadığınız sorunları bildirmek veya destek almak için aşağıdaki kategorilerden talep oluşturabilirsiniz.")
+            .setThumbnail(LOGO_URL)
+            .setColor("Blue")
+            .setFooter({ text: FOOTER_TEXT });
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('talep_skyblock').setLabel('Skyblock Destek').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('talep_genel').setLabel('Genel Destek').setStyle(ButtonStyle.Secondary)
+        );
+        await destekChan.send({ embeds: [embed], components: [row] });
+    }
+
+    const hesapChan = client.channels.cache.get(CHANNELS.hesapEslestirme);
+    if (hesapChan) {
+        const embed = new EmbedBuilder()
+            .
