@@ -64,6 +64,7 @@ const CHANNELS = {
     logKanal: "1555902219050684526"
 };
 
+// 1430625826902114396 kurucular listesinde tam yetkilidir
 const OWNERS = ["1430625826902114396", "1452002283389849690", "1429198833832951808"];
 
 // --- VERİTABANI YÖNETİMİ (JSON) ---
@@ -99,18 +100,16 @@ const TICKET_TOPICS = [
 ];
 
 function calcLevel(xp) { return Math.floor(0.1 * Math.sqrt(xp)); }
-function xpForLevel(level) { return Math.pow(Math.ceil(level / 0.1), 2); }
 
 // --- BOT HAZIR ---
 client.once('ready', async () => {
     console.log(`🤖 ${client.user.tag} başarıyla TürkiyeCraft olarak aktif edildi!`);
 
-    // Minecraft Sunucu Durumu & Oyuncu Sayısı Döngüsü
     const updatePresence = () => {
         status(MAIN_IP, 25565, { timeout: 5000 })
             .then((response) => {
                 const onlinePlayers = response.players.online;
-                client.user.setActivity(`${SERVER_NAME} \vert{}${onlinePlayers} Oyuncu Aktif`, { type: ActivityType.Playing });
+                client.user.setActivity(`${SERVER_NAME} | ${onlinePlayers} Oyuncu Aktif`, { type: ActivityType.Playing });
             })
             .catch(() => {
                 client.user.setActivity(`${SERVER_NAME} | Çevrimdışı ❌`, { type: ActivityType.Playing });
@@ -139,9 +138,113 @@ client.on('guildMemberAdd', async member => {
     channel.send({ content: `${member}`, embeds: [embed] }).catch(() => {});
 });
 
-// --- MESAJ KONTROLLERİ (KÜFÜR, SPAM, XP, OTO YANIT) ---
+// --- MESAJ & KOMUT KONTROLLERİ ---
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
+
+    const isOwner = OWNERS.includes(message.author.id);
+    const hasModPerms = message.member.permissions.has(PermissionFlagsBits.ManageMessages);
+    const isPrivileged = isOwner || hasModPerms;
+
+    // --- KOMUT İŞLEYİCİ (PREFIX SİSTEMİ) ---
+    if (message.content.startsWith(PREFIX)) {
+        const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+        const command = args.shift().toLowerCase();
+
+        // 1. TEST KOMUTU
+        if (command === 'test') {
+            const isUserOwner = OWNERS.includes(message.author.id);
+            return message.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor(0x00FF00)
+                        .setTitle("⚙️ Sistem Test Paneli")
+                        .setDescription(`Bot tamamen çalışır durumda!\n\n🏓 **Bot Gecikmesi:** \`${client.ws.ping}ms\`\n👑 **Yetki Seviyeniz:** ${isUserOwner ? "⭐ **Kurucu (Tam Yetki Aktif)**" : "Üye / Standart Yetkili"}\n📡 **Sunucu:** ${SERVER_NAME}`)
+                        .setFooter({ text: FOOTER_TEXT })
+                ]
+            });
+        }
+
+        // 2. YARDIM KOMUTU
+        if (command === 'yardim' || command === 'help') {
+            return message.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor(0x5865f2)
+                        .setTitle(`📖 ${SERVER_NAME} Komut Listesi`)
+                        .setDescription(`
+**Genel Komutlar:**
+• \`${PREFIX}test\` : Botun aktifliğini ve pingini gösterir.
+• \`${PREFIX}yardim\` : Bu menüyü gösterir.
+
+**Yönetici/Kurucu Komutları:**
+• \`${PREFIX}destek-kur\` : Destek paneli butonunu ilgili kanala atar.
+• \`${PREFIX}oneri-kur\` : Öneri gönderme butonunu kanala atar.
+• \`${PREFIX}temizle <sayı>\` : Belirtilen sayıda mesajı siler.
+                        `)
+                        .setFooter({ text: FOOTER_TEXT })
+                ]
+            });
+        }
+
+        // 3. DESTEK PANELİ KURMA KOMUTU (Sadece Kurucu veya Yönetici)
+        if (command === 'destek-kur') {
+            if (!isPrivileged) return message.reply("❌ Bu komutu kullanmak için yetkiniz yok!");
+
+            const targetChannel = message.guild.channels.cache.get(CHANNELS.destekPanel) || message.channel;
+            const embed = new EmbedBuilder()
+                .setColor(0x5865F2)
+                .setTitle(`🎫 ${SERVER_NAME} — Destek Talebi`)
+                .setDescription("Oyun içi sorunlar, öneriler veya şikayetleriniz için aşağıdaki butona tıklayarak talep oluşturabilirsiniz.\n\nYetkili ekibimiz en kısa sürede dönüş sağlayacaktır.")
+                .setFooter({ text: FOOTER_TEXT });
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('open_ticket')
+                    .setLabel('📩 Destek Talebi Aç')
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+            await targetChannel.send({ embeds: [embed], components: [row] });
+            return message.reply(`✅ Destek paneli başarıyla ${targetChannel} kanalına gönderildi.`);
+        }
+
+        // 4. ÖNERİ PANELİ KURMA KOMUTU
+        if (command === 'oneri-kur') {
+            if (!isPrivileged) return message.reply("❌ Bu komutu kullanmak için yetkiniz yok!");
+
+            const targetChannel = message.guild.channels.cache.get(CHANNELS.oneriPanel) || message.channel;
+            const embed = new EmbedBuilder()
+                .setColor(0x00FF88)
+                .setTitle(`💡 ${SERVER_NAME} — Fikir & Öneri Bildirimi`)
+                .setDescription("Sunucumuzu geliştirmemize yardımcı olmak ister misiniz? Aşağıdaki butona tıklayarak fikirlerinizi doğrudan bize ulaştırabilirsiniz.")
+                .setFooter({ text: FOOTER_TEXT });
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('suggest_open')
+                    .setLabel('💡 Öneri Gönder')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+            await targetChannel.send({ embeds: [embed], components: [row] });
+            return message.reply(`✅ Öneri paneli ${targetChannel} kanalına gönderildi.`);
+        }
+
+        // 5. TEMİZLE KOMUTU
+        if (command === 'temizle' || command === 'sil') {
+            if (!isPrivileged) return message.reply("❌ Bu işlem için mesaj silme yetkisine sahip olmalısınız.");
+            const amount = parseInt(args[0]);
+            if (isNaN(amount) || amount < 1 || amount > 100) {
+                return message.reply("⚠️ Lütfen 1-100 arasında bir sayı belirtin. Örn: `!temizle 20`");
+            }
+            await message.channel.bulkDelete(amount, true).catch(() => {});
+            const msg = await message.channel.send(`🧹 Başarıyla **${amount}** mesaj silindi.`);
+            setTimeout(() => msg.delete().catch(() => {}), 3000);
+            return;
+        }
+    }
+
     const lower = message.content.trim().toLowerCase();
 
     // Oto Yanıtlar
@@ -149,8 +252,7 @@ client.on('messageCreate', async message => {
     if (lower === 'iyi akşamlar') return message.reply('Sana da iyi akşamlar!');
     if (lower === 'günaydın') return message.reply('Günaydın! Keyifli oyunlar.');
 
-    // Anti-Link & Küfür Filtresi (Kurucular hariç)
-    const isPrivileged = OWNERS.includes(message.author.id) || message.member.permissions.has(PermissionFlagsBits.ManageMessages);
+    // Anti-Link & Küfür Filtresi (1430625826902114396 ve yetkililer engellenmez)
     if (!isPrivileged) {
         if (LINK_REGEX.test(message.content) || BAD_WORDS.some(w => lower.includes(w))) {
             LINK_REGEX.lastIndex = 0;
@@ -228,6 +330,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_topic') {
+        await interaction.deferUpdate();
         const topicVal = interaction.values[0];
         const topic = TICKET_TOPICS.find(t => t.value === topicVal);
         const guild = interaction.guild;
@@ -260,13 +363,13 @@ client.on('interactionCreate', async interaction => {
         );
 
         await channel.send({ content: `${member} | <@&${ROLES.destekEkibi}>`, embeds: [embed], components: [closeBtn] });
-        await interaction.update({ content: `✅ Talep kanalınız açıldı: ${channel}`, components: [] });
+        await interaction.editReply({ content: `✅ Talep kanalınız açıldı: ${channel}`, components: [] });
     }
 
     if (interaction.isButton() && interaction.customId === 'close_ticket') {
+        await interaction.deferReply({ ephemeral: true });
         const channelId = interaction.channel.id;
         
-        // Transkript Oluşturma ve Kaydetme
         try {
             const fetched = await interaction.channel.messages.fetch({ limit: 100 });
             const sorted = [...fetched.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
@@ -278,7 +381,7 @@ client.on('interactionCreate', async interaction => {
         } catch (e) { console.error("Transkript hatası:", e); }
 
         openTickets.delete(channelId);
-        await interaction.reply({ content: '🔒 Talep kapatılıyor, 5 saniye içinde silinecektir.' });
+        await interaction.editReply({ content: '🔒 Talep kapatılıyor, 5 saniye içinde silinecektir.' });
         setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
     }
 
@@ -301,7 +404,7 @@ client.on('interactionCreate', async interaction => {
             .setTitle(`💡 Öneri: ${title}`)
             .setDescription(body)
             .addFields({ name: '👤 Öneren', value: `${interaction.user}`, inline: true })
-            .setColor("Green")
+            .setColor(0x00FF00)
             .setFooter({ text: FOOTER_TEXT });
 
         const voteRow = new ActionRowBuilder().addComponents(
