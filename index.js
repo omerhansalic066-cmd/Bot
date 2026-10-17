@@ -289,3 +289,33 @@ client.on('interactionCreate', async interaction => {
             new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('suggest_title').setLabel('Başlık').setStyle(TextInputStyle.Short).setRequired(true)),
             new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('suggest_body').setLabel('Öneriniz').setStyle(TextInputStyle.Paragraph).setRequired(true))
         );
+        await interaction.showModal(modal);
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === 'suggest_modal') {
+        const title = interaction.fields.getTextInputValue('suggest_title');
+        const body = interaction.fields.getTextInputValue('suggest_body');
+        const listChan = interaction.guild.channels.cache.get(CHANNELS.oneriListe);
+
+        const embed = new EmbedBuilder()
+            .setTitle(`💡 Öneri: ${title}`)
+            .setDescription(body)
+            .addFields({ name: '👤 Öneren', value: `${interaction.user}`, inline: true })
+            .setColor("Green")
+            .setFooter({ text: FOOTER_TEXT });
+
+        const voteRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('oy_evet').setLabel('👍 Evet').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('oy_hayir').setLabel('👎 Hayır').setStyle(ButtonStyle.Danger)
+        );
+
+        if (listChan) await listChan.send({ embeds: [embed], components: [voteRow] });
+        await interaction.reply({ content: '✅ Öneriniz başarıyla yayınlandı!', ephemeral: true });
+    }
+
+    if (interaction.isButton() && (interaction.customId === 'oy_evet' || interaction.customId === 'oy_hayir')) {
+        await interaction.reply({ content: `Oyunuz kaydedildi: **${interaction.customId === 'oy_evet' ? 'Evet' : 'Hayır'}**`, ephemeral: true });
+    }
+});
+
+client.login(process.env.DISCORD_TOKEN);
