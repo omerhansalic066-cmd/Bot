@@ -1,0 +1,59 @@
+const { EmbedBuilder, PermissionsBitField } = require('discord.js');
+const CONFIG = require('./config');
+
+const userSpamMap = new Map();
+
+function checkSecurityViolations(message) {
+    if (message.member?.permissions.has(PermissionsBitField.Flags.ManageMessages)) return false;
+
+    const text = message.content;
+    const logChannel = message.guild.channels.cache.get(CONFIG.CHANNELS.LOG_PUNISH);
+
+    // 1. Küfür Koruması
+    const kufurler = ['amk', 'aq', 'oç', 'piç', 'sik', 'yarrak', 'orospu', 'kahpe'];
+    const kelimeler = text.toLowerCase().split(/\s+/);
+    if (kelimeler.some(k => kufurler.includes(k))) {
+        message.delete().catch(() => {});
+        message.channel.send(`⚠️ ${message.author}, lütfen sunucu içerisinde küfür ve argo kullanmayınız!`).then(m => setTimeout(() => m.delete(), 4000));
+        if (logChannel) {
+            logChannel.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor('#e74c3c')
+                        .setTitle('🛡️ Otomatik Küfür Filtresi')
+                        .setDescription(`**Kullanıcı:** ${message.author} (${message.author.id})\n**Kanal:** ${message.channel}\n**Mesaj:** \`${text}\``)
+                        .setFooter({ text: CONFIG.SERVER.FOOTER })
+                ]
+            });
+        }
+        return true;
+    }
+
+    // 2. CapsLock Koruması
+    if (text.length >= 8) {
+        const upperCount = text.replace(/[^A-ZÇĞİÖŞÜ]/g, "").length;
+        if ((upperCount / text.length) >= 0.70) {
+            message.delete().catch(() => {});
+            message.channel.send(`⚠️ ${message.author}, lütfen büyük harf kullanımını sınırlandırın!`).then(m => setTimeout(() => m.delete(), 4000));
+            return true;
+        }
+    }
+
+    // 3. Spam Koruması
+    const now = Date.now();
+    const userSpam = userSpamMap.get(message.author.id) || [];
+    const recentMessages = userSpam.filter(t => now - t < 5000);
+    recentMessages.push(now);
+    userSpamMap.set(message.author.id, recentMessages);
+
+    if (recentMessages.length >= 5) {
+        message.delete().catch(() => {});
+        message.member.timeout(60 * 1000, "Spam koruması tetiklendi.").catch(() => {});
+        message.channel.send(`🛑 ${message.author} spam yaptığı gerekçesiyle 1 dakika süreyle susturuldu.`);
+        return true;
+    }
+
+    return false;
+}
+
+module.exports = { checkSecurityViolations };
