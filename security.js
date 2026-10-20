@@ -4,42 +4,73 @@ const CONFIG = require('./config');
 const userSpamMap = new Map();
 
 function checkSecurityViolations(message) {
-    if (message.member?.permissions.has(PermissionsBitField.Flags.ManageMessages)) return false;
+    if (!message.guild || message.author.bot) return false;
+    
+    // Yetkililer ve Kurucu korumalardan muaftır
+    const isStaff = message.member?.permissions.has(PermissionsBitField.Flags.ManageMessages) ||
+                    message.member?.roles.cache.has(CONFIG.ROLES.YETKILI_EKIBI) ||
+                    message.member?.roles.cache.has(CONFIG.ROLES.YONETICI) ||
+                    message.author.id === CONFIG.OWNER_ID;
+    if (isStaff) return false;
 
     const text = message.content;
     const logChannel = message.guild.channels.cache.get(CONFIG.CHANNELS.LOG_PUNISH);
 
-    // 1. Küfür Koruması
-    const kufurler = ['amk', 'aq', 'oç', 'piç', 'sik', 'yarrak', 'orospu', 'kahpe'];
-    const kelimeler = text.toLowerCase().split(/\s+/);
-    if (kelimeler.some(k => kufurler.includes(k))) {
+    // 1. Reklam Koruması
+    const inviteRegex = /(https?:\/\/)?(www\.)?(discord\.(gg|io|me|li)|discordapp\.com\/invite|discord\.com\/invite)\/[a-zA-Z0-9]+/gi;
+    if (inviteRegex.test(text)) {
         message.delete().catch(() => {});
-        message.channel.send(`⚠️ ${message.author}, lütfen sunucu içerisinde küfür ve argo kullanmayınız!`).then(m => setTimeout(() => m.delete(), 4000));
+        message.channel.send(`⚠️ ${message.author}, sunucuda reklam yapmak kesinlikle yasaktır!`).then(m => setTimeout(() => m.delete().catch(() => {}), 4000));
         if (logChannel) {
             logChannel.send({
                 embeds: [
                     new EmbedBuilder()
                         .setColor('#e74c3c')
-                        .setTitle('🛡️ Otomatik Küfür Filtresi')
-                        .setDescription(`**Kullanıcı:** ${message.author} (${message.author.id})\n**Kanal:** ${message.channel}\n**Mesaj:** \`${text}\``)
-                        .setFooter({ text: CONFIG.SERVER.FOOTER })
+                        .setAuthor({ name: `${CONFIG.SERVER.NAME} • Güvenlik Sistemi`, iconURL: CONFIG.SERVER.ICON_URL })
+                        .setTitle('🛡️ Reklam Engellendi')
+                        .setDescription(`**Kullanıcı:** ${message.author} (\`${message.author.id}\`)\n**Kanal:** ${message.channel}\n**Mesaj İçeriği:** \`${text}\``)
+                        .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
+                        .setTimestamp()
                 ]
-            });
+            }).catch(() => {});
         }
         return true;
     }
 
-    // 2. CapsLock Koruması
-    if (text.length >= 8) {
-        const upperCount = text.replace(/[^A-ZÇĞİÖŞÜ]/g, "").length;
-        if ((upperCount / text.length) >= 0.70) {
+    // 2. Küfür ve Argo Koruması
+    const normalizedText = text.toLowerCase().replace(/[^a-zçğışöü0-9]/g, '');
+    const kufurRegex = /(o[çc]|a[mq]|amk|sik[ie]?|pi[çc]|yarra[kğ]|kahpe|orospu|g[öo]t[uü]?)/gi;
+    if (kufurRegex.test(normalizedText)) {
+        message.delete().catch(() => {});
+        message.channel.send(`⚠️ ${message.author}, lütfen küfür ve argo sözcükler kullanmayınız!`).then(m => setTimeout(() => m.delete().catch(() => {}), 4000));
+        if (logChannel) {
+            logChannel.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor('#e74c3c')
+                        .setAuthor({ name: `${CONFIG.SERVER.NAME} • Güvenlik Sistemi`, iconURL: CONFIG.SERVER.ICON_URL })
+                        .setTitle('🛡️ Otomatik Küfür Filtresi')
+                        .setDescription(`**Kullanıcı:** ${message.author} (\`${message.author.id}\`)\n**Kanal:** ${message.channel}\n**Mesaj:** \`${text}\``)
+                        .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
+                        .setTimestamp()
+                ]
+            }).catch(() => {});
+        }
+        return true;
+    }
+
+    // 3. CapsLock Koruması
+    const cleanLetters = text.replace(/[^A-Za-zÇĞİÖŞÜçğıöşü]/g, '');
+    if (cleanLetters.length >= 8) {
+        const upperCount = cleanLetters.replace(/[^A-ZÇĞİÖŞÜ]/g, '').length;
+        if ((upperCount / cleanLetters.length) >= 0.70) {
             message.delete().catch(() => {});
-            message.channel.send(`⚠️ ${message.author}, lütfen büyük harf kullanımını sınırlandırın!`).then(m => setTimeout(() => m.delete(), 4000));
+            message.channel.send(`⚠️ ${message.author}, lütfen büyük harf kullanımını sınırlandırın!`).then(m => setTimeout(() => m.delete().catch(() => {}), 4000));
             return true;
         }
     }
 
-    // 3. Spam Koruması
+    // 4. Spam Koruması
     const now = Date.now();
     const userSpam = userSpamMap.get(message.author.id) || [];
     const recentMessages = userSpam.filter(t => now - t < 5000);
@@ -47,9 +78,10 @@ function checkSecurityViolations(message) {
     userSpamMap.set(message.author.id, recentMessages);
 
     if (recentMessages.length >= 5) {
+        userSpamMap.delete(message.author.id);
         message.delete().catch(() => {});
-        message.member.timeout(60 * 1000, "Spam koruması tetiklendi.").catch(() => {});
-        message.channel.send(`🛑 ${message.author} spam yaptığı gerekçesiyle 1 dakika süreyle susturuldu.`);
+        message.member.timeout(60 * 1000, "Spam Koruması").catch(() => {});
+        message.channel.send(`🛑 ${message.author} aşırı hızlı mesaj attığı için 1 dakika susturuldu.`);
         return true;
     }
 
