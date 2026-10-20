@@ -3,6 +3,9 @@
  * Powered by ttcodersstudio | TürkiyeCraft
  */
 
+// Yerel çalışmalarda .env dosyasını okuyabilmesi için (yüklü değilse hata vermez)
+try { require('dotenv').config(); } catch (e) {}
+
 const {
     Client,
     GatewayIntentBits,
@@ -29,7 +32,7 @@ const fs = require('fs');
 // [1] GENEL AYARLAR VE ID TANIMLARI
 // ==========================================
 const CONFIG = {
-    TOKEN: "MTU1ODU3NjY2MjM0MDMxMzEwMA.GfOo-k.nxYMAYyhnQ95SQnYWt2CLyXwlmrWFMdDxqtsP0",
+    TOKEN: process.env.DISCORD_TOKEN, // Belirttiğin çevre değişkeninden çekilir
     CLIENT_ID: "1558576662340313100",
     GUILD_ID: "1542137972852523090",
     PREFIX: "!",
@@ -950,7 +953,4 @@ client.on('interactionCreate', async (interaction) => {
                     )
                     .setFooter({ text: CONFIG.SERVER.FOOTER })
                     .setTimestamp();
-                await logCh.send({ embeds: [embed] });
-            }
-            return interaction.reply({ content: '✅ Kontrol kaydı loglandı.', ephemeral: true });
-        }... (2 KB kaldı)
+                await logCh.send({ emb... (3 KB kaldı)
