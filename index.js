@@ -24,13 +24,22 @@ const CONFIG = require('./config');
 const { checkSecurityViolations } = require('./security');
 const { buildAllPanels } = require('./panels');
 
+// Yönetici Rolü ve Admin Doğrulama Fonksiyonu
+function hasAdminPower(member) {
+    if (!member) return false;
+    return member.roles.cache.has(CONFIG.ROLES.YONETICI) ||
+           member.roles.cache.has(CONFIG.ROLES.KURUCU) ||
+           member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+           member.id === CONFIG.OWNER_ID;
+}
+
 // Seviye Veri Tabanı
 let xpData = {};
 if (fs.existsSync('./levels.json')) {
-    try { xpData = JSON.parse(fs.readFileSync('./levels.json', 'utf8')); } catch (e) { xpData = {}; }
+    try { xpData = JSON.parse(fs.readFileSync('./levels.json', 'utf8')); } catch { xpData = {}; }
 }
 function saveXP() {
-    fs.writeFileSync('./levels.json', JSON.stringify(xpData, null, 2));
+    try { fs.writeFileSync('./levels.json', JSON.stringify(xpData, null, 2)); } catch {}
 }
 
 const invitesCache = new Map();
@@ -47,40 +56,58 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.GuildMember]
 });
 
-// Slash Komut Listesi
+// Güncel Slash Komut Listesi
 const slashCommands = [
-    new SlashCommandBuilder().setName('yanıt').setDescription('Destek talebine hazır yanıt penceresini açar.'),
+    new SlashCommandBuilder().setName('yanıt').setDescription('Destek talebine hazır yanıt kalıbı gönderir.'),
     new SlashCommandBuilder()
         .setName('duyuru')
         .setDescription('Resmi TürkiyeCraft duyurusu yayınlar.')
-        .addChannelOption(o => o.setName('kanal').setDescription('Duyurunun gideceği kanal').setRequired(true))
+        .addChannelOption(o => o.setName('kanal').setDescription('Duyuru kanalı').setRequired(true))
         .addStringOption(o => o.setName('baslik').setDescription('Duyuru başlığı').setRequired(true))
         .addStringOption(o => o.setName('icerik').setDescription('Duyuru metni').setRequired(true))
         .addStringOption(o => o.setName('gorsel').setDescription('Görsel URL linki').setRequired(false)),
     new SlashCommandBuilder()
         .setName('çekiliş')
         .setDescription('Çekiliş başlatır.')
-        .addStringOption(o => o.setName('odul').setDescription('Çekiliş ödülü').setRequired(true))
-        .addIntegerOption(o => o.setName('kazanan').setDescription('Kazanan kişi sayısı').setRequired(true))
+        .addStringOption(o => o.setName('odul').setDescription('Ödül').setRequired(true))
+        .addIntegerOption(o => o.setName('kazanan').setDescription('Kazanan sayısı').setRequired(true))
         .addIntegerOption(o => o.setName('sure').setDescription('Süre (Dakika)').setRequired(true)),
     new SlashCommandBuilder()
         .setName('incele')
-        .setDescription('Kullanıcının ceza ve sistem geçmişini inceler.')
+        .setDescription('Kullanıcının profil ve seviye verilerini inceler.')
         .addUserOption(o => o.setName('kullanici').setDescription('İncelenecek kullanıcı').setRequired(true)),
-    new SlashCommandBuilder().setName('kont-panel').setDescription('Hile Kontrol log bildirim panelini açar.')
+    new SlashCommandBuilder().setName('kont-panel').setDescription('Hile Kontrol bildirim panelini açar.'),
+    new SlashCommandBuilder()
+        .setName('temizle')
+        .setDescription('Belirtilen sayıda mesajı kanaldan siler (Yönetici).')
+        .addIntegerOption(o => o.setName('sayi').setDescription('Silinecek mesaj sayısı (1-100)').setRequired(true)),
+    new SlashCommandBuilder()
+        .setName('gönder')
+        .setDescription('Bot üzerinden belirtilen kanala mesaj gönderir (Yönetici).')
+        .addChannelOption(o => o.setName('kanal').setDescription('Mesajın gideceği kanal').setRequired(true))
+        .addStringOption(o => o.setName('mesaj').setDescription('Gönderilecek metin').setRequired(true)),
+    new SlashCommandBuilder()
+        .setName('embed-gönder')
+        .setDescription('Bot üzerinden özel Embed mesajı gönderir (Yönetici).')
+        .addChannelOption(o => o.setName('kanal').setDescription('Mesajın gideceği kanal').setRequired(true))
+        .addStringOption(o => o.setName('baslik').setDescription('Embed başlığı').setRequired(true))
+        .addStringOption(o => o.setName('aciklama').setDescription('Embed açıklaması').setRequired(true))
+        .addStringOption(o => o.setName('renk').setDescription('Renk HEX Kodu (örn: #2ecc71)').setRequired(false))
+        .addStringOption(o => o.setName('gorsel').setDescription('Görsel URL').setRequired(false))
 ].map(c => c.toJSON());
 
 // BOT HAZIR
 client.once('ready', async () => {
-    console.log(`[TÜRKIYECRAFT] ${client.user.tag} operasyona hazır!`);
+    console.log(`[TÜRKIYECRAFT] ${client.user.tag} başarıyla başlatıldı!`);
 
     if (CONFIG.TOKEN) {
         try {
             const rest = new REST({ version: '10' }).setToken(CONFIG.TOKEN);
+            await rest.put(Routes.applicationGuildCommands(CONFIG.CLIENT_ID, CONFIG.GUILD_ID), { body: [] });
             await rest.put(Routes.applicationGuildCommands(CONFIG.CLIENT_ID, CONFIG.GUILD_ID), { body: slashCommands });
-            console.log('[TÜRKIYECRAFT] Slash komutları kaydedildi.');
+            console.log('[TÜRKIYECRAFT] Slash komutları sıfırlandı ve güncellendi.');
         } catch (err) {
-            console.error('Slash komut hatası:', err);
+            console.error('[HATA] Slash komut:', err.message);
         }
     }
 
@@ -105,7 +132,7 @@ async function updateServerStatus() {
         online = res.players.online;
         max = res.players.max;
         isUp = true;
-    } catch (e) {
+    } catch {
         isUp = false;
     }
 
@@ -117,7 +144,7 @@ async function updateServerStatus() {
             .setColor(isUp ? '#2ecc71' : '#e74c3c')
             .setAuthor({ name: `${CONFIG.SERVER.NAME} • Canlı Ağ Durumu`, iconURL: CONFIG.SERVER.ICON_URL })
             .setThumbnail(CONFIG.SERVER.ICON_URL)
-            .setDescription(`Aşağıda **${CONFIG.SERVER.NAME}** sunucusunun anlık bağlantı verileri yer almaktadır. Sunucumuz çok yakında kapılarını açıyor!`)
+            .setDescription(`Aşağıda **${CONFIG.SERVER.NAME}** sunucusunun anlık bağlantı verileri yer almaktadır.`)
             .addFields(
                 { name: '🌐 Sunucu IP', value: `\`${CONFIG.SERVER.IP}\``, inline: true },
                 { name: '🟢 Durum', value: isUp ? '`Aktif / Canlı`' : '`Yakında Açılıyor / Bakım`', inline: true },
@@ -127,7 +154,7 @@ async function updateServerStatus() {
             .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
             .setTimestamp();
 
-        const messages = await statusChannel.messages.fetch({ limit: 5 });
+        const messages = await statusChannel.messages.fetch({ limit: 5 }).catch(() => new Map());
         const lastBotMsg = messages.find(m => m.author.id === client.user.id);
         if (lastBotMsg) {
             await lastBotMsg.edit({ embeds: [embed] }).catch(() => {});
@@ -160,7 +187,7 @@ client.on('messageCreate', async (message) => {
         xpData[userId].xp = 0;
         saveXP();
         const curLevel = xpData[userId].level;
-        message.channel.send(`🎉 Tebrikler ${message.author}! Seviye atladın: **Seviye ${curLevel}**`).then(m => setTimeout(() => m.delete(), 5000));
+        message.channel.send(`🎉 Tebrikler ${message.author}! Seviye atladın: **Seviye ${curLevel}**`).then(m => setTimeout(() => m.delete().catch(() => {}), 5000));
         for (const [key, val] of Object.entries(CONFIG.ROLES.LEVEL_ROLES)) {
             if (curLevel >= val.level && !message.member.roles.cache.has(val.id)) {
                 message.member.roles.add(val.id).catch(() => {});
@@ -172,6 +199,7 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(CONFIG.PREFIX.length).trim().split(/ +/);
     const cmd = args.shift().toLowerCase();
 
+    // !ip, !durum
     if (['ip', 'mc', 'durum'].includes(cmd)) {
         try {
             const status = await util.status(CONFIG.SERVER.IP, CONFIG.SERVER.PORT, { timeout: 3000 });
@@ -179,10 +207,9 @@ client.on('messageCreate', async (message) => {
                 .setColor('#2ecc71')
                 .setAuthor({ name: `${CONFIG.SERVER.NAME} • Sunucu Durumu`, iconURL: CONFIG.SERVER.ICON_URL })
                 .setThumbnail(CONFIG.SERVER.ICON_URL)
-                .setDescription(`Aşağıda **${CONFIG.SERVER.NAME}** sunucu bilgileri listelenmiştir.`)
+                .setDescription(`Sunucu aktif ve erişilebilir durumda!`)
                 .addFields(
-                    { name: '🌐 Sunucu IP', value: `\`${CONFIG.SERVER.IP}\``, inline: true },
-                    { name: '🟢 Durum', value: '`Aktif`', inline: true },
+                    { name: '🌐 IP', value: `\`${CONFIG.SERVER.IP}\``, inline: true },
                     { name: '👥 Çevrimiçi', value: `\`${status.players.online} / ${status.players.max}\``, inline: true },
                     { name: '⚡ Sürüm', value: `\`${CONFIG.SERVER.VERSION}\``, inline: false }
                 )
@@ -190,18 +217,84 @@ client.on('messageCreate', async (message) => {
                 .setTimestamp();
             return message.reply({ embeds: [embed] });
         } catch {
-            const errEmbed = new EmbedBuilder()
-                .setColor('#e74c3c')
-                .setAuthor({ name: `${CONFIG.SERVER.NAME} • Sunucu Kapalı / Bakımda`, iconURL: CONFIG.SERVER.ICON_URL })
-                .setDescription(`Sunucumuz şu anda hazırlık aşamasında veya bakım modundadır.\nÇok yakında sizlerle!\n🌐 **IP:** \`${CONFIG.SERVER.IP}\``)
-                .setFooter({ text: CONFIG.SERVER.FOOTER });
-            return message.reply({ embeds: [errEmbed] });
+            return message.reply(`🔴 Sunucu şu anda kapalı veya bakımda! IP: \`${CONFIG.SERVER.IP}\``);
         }
     }
 
-    if (cmd === 'paneller-kur' && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    // !yardım
+    if (cmd === 'yardım') {
+        const isStaff = message.member.roles.cache.has(CONFIG.ROLES.YETKILI_EKIBI) || hasAdminPower(message.member);
+        if (!isStaff) return message.reply('❌ Bu komutu sadece yetkili ekibi görüntüleyebilir.');
+
+        const helpEmbed = new EmbedBuilder()
+            .setColor('#3498db')
+            .setAuthor({ name: `${CONFIG.SERVER.NAME} • Yetkili Komut Rehberi`, iconURL: CONFIG.SERVER.ICON_URL })
+            .setDescription(`Sunucu içerisinde kullanabileceğiniz yetkili araçları ve komut listesi:`)
+            .addFields(
+                { name: '⚙️ Yönetici Komutları', value: '`/temizle` - Kanaldaki mesajları siler.\n`/gönder` - Kanala mesaj yollar.\n`/embed-gönder` - Kanala özel embed gönderir.\n`!paneller-kur` - Tüm sistem panellerini kurar.\n`!owner` - Sistem durum raporunu verir.' },
+                { name: '💬 Slash Komutları', value: '`/duyuru` - Kanala resmi duyuru atar.\n`/yanıt` - Talebe hazır kalıp iletir.\n`/çekiliş` - Çekiliş başlatır.\n`/kont-panel` - Hile kontrol kaydı girer.\n`/incele` - Oyuncu profili inceler.' },
+                { name: '🔒 Özel Komutlar', value: '`!stop`, `!reload` - Yalnızca Bot Sahibi tarafından kullanılabilir.' }
+            )
+            .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL });
+        return message.reply({ embeds: [helpEmbed] });
+    }
+
+    // !owner
+    if (cmd === 'owner') {
+        if (!hasAdminPower(message.member)) return message.reply('❌ Bu rapora yalnızca Yöneticiler erişebilir.');
+
+        const ramUsage = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+        const uptimeHours = Math.floor(process.uptime() / 3600);
+        const uptimeMinutes = Math.floor((process.uptime() % 3600) / 60);
+
+        let mcStatus = 'Kapalı / Erişilemez';
+        try {
+            const mc = await util.status(CONFIG.SERVER.IP, CONFIG.SERVER.PORT, { timeout: 2000 });
+            mcStatus = `Aktif (${mc.players.online}/${mc.players.max})`;
+        } catch {}
+
+        const ownerEmbed = new EmbedBuilder()
+            .setColor('#9b59b6')
+            .setAuthor({ name: `${CONFIG.SERVER.NAME} • Sistem Sağlık Raporu`, iconURL: CONFIG.SERVER.ICON_URL })
+            .setThumbnail(CONFIG.SERVER.ICON_URL)
+            .addFields(
+                { name: '🤖 Bot Bellek (RAM)', value: `\`${ramUsage} MB\``, inline: true },
+                { name: '⚡ Discord Gecikmesi', value: `\`${client.ws.ping} ms\``, inline: true },
+                { name: '⏱️ Çalışma Süresi', value: `\`${uptimeHours} saat ${uptimeMinutes} dk\``, inline: true },
+                { name: '🎮 Minecraft Sunucusu', value: `\`${mcStatus}\``, inline: true },
+                { name: '👥 Sunucu Üye Sayısı', value: `\`${message.guild.memberCount}\``, inline: true },
+                { name: '📁 Node Sürümü', value: `\`${process.version}\``, inline: true }
+            )
+            .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
+            .setTimestamp();
+        return message.reply({ embeds: [ownerEmbed] });
+    }
+
+    // !stop, !start, !reload (Sadece OWNER_ID)
+    if (['stop', 'start', 'reload'].includes(cmd)) {
+        if (message.author.id !== CONFIG.OWNER_ID) {
+            return message.reply('❌ Bu komutu sadece Bot Sahibi kullanabilir.');
+        }
+
+        const logCh = message.guild.channels.cache.get(CONFIG.CHANNELS.LOG_PUNISH);
+        if (logCh) {
+            logCh.send(`⚠️ **[SİSTEM BİLGİSİ]** Bot işlemi tetiklendi: \`!${cmd}\` (İşlemi Yapan: ${message.author.tag})`).catch(() => {});
+        }
+
+        if (cmd === 'stop') {
+            await message.reply('🛑 Bot kapatılıyor...');
+            process.exit(0);
+        } else if (cmd === 'reload' || cmd === 'start') {
+            await message.reply('🔄 Bot servisleri yeniden başlatılıyor...');
+            process.exit(1);
+        }
+    }
+
+    // !paneller-kur
+    if (cmd === 'paneller-kur') {
+        if (!hasAdminPower(message.member)) return message.reply('❌ Bu işlem için Yönetici yetkisi gereklidir.');
         buildAllPanels(message.guild);
-        return message.reply('✅ Bütün sistem panelleri tanımlanan kanallara başarıyla yüklendi.');
+        return message.reply('✅ Bütün sistem panelleri başarıyla yüklendi.');
     }
 });
 
@@ -214,8 +307,8 @@ client.on('messageDelete', async (message) => {
     const embed = new EmbedBuilder()
         .setColor('#e74c3c')
         .setAuthor({ name: '🗑️ Mesaj Silindi', iconURL: CONFIG.SERVER.ICON_URL })
-        .setDescription(`**Yazar:** ${message.author} (${message.author.id})\n**Kanal:** ${message.channel}\n\n**Silinen İçerik:**\n> ${message.content || 'Görsel / Dosya'}`)
-        .setFooter({ text: CONFIG.SERVER.FOOTER })
+        .setDescription(`**Yazar:** ${message.author} (\`${message.author.id}\`)\n**Kanal:** ${message.channel}\n\n**Silinen İçerik:**\n> ${message.content || 'Görsel / Dosya'}`)
+        .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
         .setTimestamp();
     logChannel.send({ embeds: [embed] }).catch(() => {});
 });
@@ -228,12 +321,12 @@ client.on('messageUpdate', async (oldMsg, newMsg) => {
     const embed = new EmbedBuilder()
         .setColor('#f39c12')
         .setAuthor({ name: '✏️ Mesaj Düzenlendi', iconURL: CONFIG.SERVER.ICON_URL })
-        .setDescription(`**Yazar:** ${oldMsg.author} (${oldMsg.author.id})\n**Kanal:** ${oldMsg.channel}`)
+        .setDescription(`**Yazar:** ${oldMsg.author} (\`${oldMsg.author.id}\`)\n**Kanal:** ${oldMsg.channel}`)
         .addFields(
             { name: 'Eski Hali', value: `> ${oldMsg.content || 'Boş'}`, inline: false },
             { name: 'Yeni Hali', value: `> ${newMsg.content || 'Boş'}`, inline: false }
         )
-        .setFooter({ text: CONFIG.SERVER.FOOTER })
+        .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
         .setTimestamp();
     logChannel.send({ embeds: [embed] }).catch(() => {});
 });
@@ -256,7 +349,7 @@ client.on('guildMemberAdd', async (member) => {
     const embed = new EmbedBuilder()
         .setColor('#2ecc71')
         .setAuthor({ name: `${CONFIG.SERVER.NAME} Topluluğuna Hoş Geldin!`, iconURL: member.user.displayAvatarURL() })
-        .setThumbnail(member.user.displayAvatarURL())
+        .setThumbnail(CONFIG.SERVER.ICON_URL)
         .setDescription(`Selam ${member}! Sunucumuzun büyüyen bir parçası olduğun için mutluyuz.\n\n` +
             `📜 Kurallarımızı <#${CONFIG.CHANNELS.RULES}> kanalından okumayı unutma!\n` +
             `🔗 Minecraft Adresimiz: \`${CONFIG.SERVER.IP}\`\n\n` +
@@ -268,11 +361,63 @@ client.on('guildMemberAdd', async (member) => {
     welcomeChannel.send({ content: `👋 Merhaba ${member}!`, embeds: [embed] }).catch(() => {});
 });
 
-// ETKİLEŞİMLER (BUTON, MODAL, SLASH)
+// ETKİLEŞİMLER
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isChatInputCommand()) {
-        if (interaction.commandName === 'yanıt') {
-            const isStaff = interaction.member.roles.cache.has(CONFIG.ROLES.YETKILI_EKIBI) || interaction.member.roles.cache.has(CONFIG.ROLES.GOREVLI_GENEL);
+        const { commandName, member, options, channel } = interaction;
+
+        // /temizle
+        if (commandName === 'temizle') {
+            if (!hasAdminPower(member)) return interaction.reply({ content: '❌ Bu komutu sadece Yöneticiler kullanabilir.', ephemeral: true });
+
+            const count = options.getInteger('sayi');
+            if (count < 1 || count > 100) return interaction.reply({ content: 'Lütfen 1 ile 100 arasında bir sayı giriniz.', ephemeral: true });
+
+            await channel.bulkDelete(count, true).catch(() => {});
+            return interaction.reply({ content: `🧹 Başarıyla **${count}** adet mesaj temizlendi.`, ephemeral: true });
+        }
+
+        // /gönder
+        if (commandName === 'gönder') {
+            if (!hasAdminPower(member)) return interaction.reply({ content: '❌ Bu komutu sadece Yöneticiler kullanabilir.', ephemeral: true });
+
+            const targetChannel = options.getChannel('kanal');
+            const text = options.getString('mesaj');
+
+            if (!targetChannel.isTextBased()) return interaction.reply({ content: 'Lütfen geçerli bir metin kanalı seçin.', ephemeral: true });
+
+            await targetChannel.send(text);
+            return interaction.reply({ content: `✅ Mesaj başarıyla ${targetChannel} kanalına gönderildi.`, ephemeral: true });
+        }
+
+        // /embed-gönder
+        if (commandName === 'embed-gönder') {
+            if (!hasAdminPower(member)) return interaction.reply({ content: '❌ Bu komutu sadece Yöneticiler kullanabilir.', ephemeral: true });
+
+            const targetChannel = options.getChannel('kanal');
+            const baslik = options.getString('baslik');
+            const aciklama = options.getString('aciklama');
+            const renk = options.getString('renk') || '#2ecc71';
+            const gorsel = options.getString('gorsel');
+
+            if (!targetChannel.isTextBased()) return interaction.reply({ content: 'Lütfen geçerli bir metin kanalı seçin.', ephemeral: true });
+
+            const customEmbed = new EmbedBuilder()
+                .setColor(renk)
+                .setTitle(baslik)
+                .setDescription(aciklama)
+                .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
+                .setTimestamp();
+
+            if (gorsel) customEmbed.setImage(gorsel);
+
+            await targetChannel.send({ embeds: [customEmbed] });
+            return interaction.reply({ content: `✅ Embed başarıyla ${targetChannel} kanalına gönderildi.`, ephemeral: true });
+        }
+
+        // /yanıt
+        if (commandName === 'yanıt') {
+            const isStaff = member.roles.cache.has(CONFIG.ROLES.YETKILI_EKIBI) || member.roles.cache.has(CONFIG.ROLES.GOREVLI_GENEL) || hasAdminPower(member);
             if (!isStaff) return interaction.reply({ content: '❌ Yetkiniz bulunmuyor.', ephemeral: true });
 
             const row = new ActionRowBuilder().addComponents(
@@ -288,14 +433,14 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: 'Hazır yanıt seçiniz:', components: [row], ephemeral: true });
         }
 
-        if (interaction.commandName === 'duyuru') {
-            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return interaction.reply({ content: 'Yetkiniz yetersiz.', ephemeral: true });
-            }
-            const targetChannel = interaction.options.getChannel('kanal');
-            const baslik = interaction.options.getString('baslik');
-            const icerik = interaction.options.getString('icerik');
-            const gorsel = interaction.options.getString('gorsel');
+        // /duyuru
+        if (commandName === 'duyuru') {
+            if (!hasAdminPower(member)) return interaction.reply({ content: 'Yetkiniz yetersiz.', ephemeral: true });
+
+            const targetChannel = options.getChannel('kanal');
+            const baslik = options.getString('baslik');
+            const icerik = options.getString('icerik');
+            const gorsel = options.getString('gorsel');
 
             const embed = new EmbedBuilder()
                 .setColor('#2ecc71')
@@ -310,10 +455,11 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: `Duyuru ${targetChannel} kanalında yayınlandı.`, ephemeral: true });
         }
 
-        if (interaction.commandName === 'çekiliş') {
-            const odul = interaction.options.getString('odul');
-            const kazanan = interaction.options.getInteger('kazanan');
-            const sure = interaction.options.getInteger('sure');
+        // /çekiliş
+        if (commandName === 'çekiliş') {
+            const odul = options.getString('odul');
+            const kazanan = options.getInteger('kazanan');
+            const sure = options.getInteger('sure');
             const bitisZamani = Math.floor((Date.now() + (sure * 60 * 1000)) / 1000);
 
             const embed = new EmbedBuilder()
@@ -324,7 +470,7 @@ client.on('interactionCreate', async (interaction) => {
                     `👑 **Kazanan Sayısı:** \`${kazanan}\`\n` +
                     `⏰ **Bitiş:** <t:${bitisZamani}:R>`
                 )
-                .setFooter({ text: CONFIG.SERVER.FOOTER });
+                .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL });
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`giveaway_join_${Date.now()}`).setLabel('Katıl (0)').setStyle(ButtonStyle.Success).setEmoji('🎉')
@@ -332,8 +478,9 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ embeds: [embed], components: [row] });
         }
 
-        if (interaction.commandName === 'kont-panel') {
-            const isStaff = interaction.member.roles.cache.has(CONFIG.ROLES.YETKILI_EKIBI);
+        // /kont-panel
+        if (commandName === 'kont-panel') {
+            const isStaff = member.roles.cache.has(CONFIG.ROLES.YETKILI_EKIBI) || hasAdminPower(member);
             if (!isStaff) return interaction.reply({ content: 'Yetkiniz yok.', ephemeral: true });
 
             const modal = new ModalBuilder().setCustomId('modal_kont_entry').setTitle('Hile Kontrol / AAC Bildirimi');
@@ -346,8 +493,9 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.showModal(modal);
         }
 
-        if (interaction.commandName === 'incele') {
-            const user = interaction.options.getUser('kullanici');
+        // /incele
+        if (commandName === 'incele') {
+            const user = options.getUser('kullanici');
             const userLvl = xpData[user.id] || { level: 1, xp: 0 };
             const embed = new EmbedBuilder()
                 .setColor('#3498db')
@@ -357,21 +505,22 @@ client.on('interactionCreate', async (interaction) => {
                     { name: 'Topluluk Seviyesi', value: `\`Seviye ${userLvl.level} (${userLvl.xp} XP)\``, inline: true },
                     { name: 'Hesap Oluşturulma', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: false }
                 )
-                .setFooter({ text: CONFIG.SERVER.FOOTER });
+                .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL });
             return interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
 
+    // MENÜLER
     if (interaction.isStringSelectMenu()) {
         if (interaction.customId === 'select_quick_reply') {
             const val = interaction.values[0];
             let title = "", desc = "", color = "#2ecc71";
             if (val === 'cozuldu') {
                 title = "✅ Destek Talebi Çözüldü";
-                desc = "Talebiniz kapsamında gerekli kontroller ve işlemler tamamlandı.\nSorununuzun çözüldüğünü düşünüyorsanız talep kapatılabilir.";
+                desc = "Talebiniz kapsamında gerekli kontroller tamamlandı.\nSorununuz çözüldüyse talep kapatılabilir.";
             } else if (val === 'kanit') {
                 title = "📷 Kanıt ve Bilgi Talebi";
-                desc = "İlettiğiniz durumu doğrulayabilmemiz adına ekran görüntüsü veya video kaydı iletmenizi rica ederiz.";
+                desc = "Durumu doğrulayabilmemiz adına ekran görüntüsü veya video kaydı iletmenizi rica ederiz.";
                 color = "#3498db";
             } else if (val === 'yonetim') {
                 title = "⏳ İnceleme Başlatıldı";
@@ -383,7 +532,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setColor(color)
                 .setTitle(title)
                 .setDescription(desc)
-                .setFooter({ text: `Bu yanıt @${interaction.user.username} tarafından iletilmiştir. • ${CONFIG.SERVER.FOOTER}` });
+                .setFooter({ text: `Bu yanıt @${interaction.user.username} tarafından iletilmiştir. • ${CONFIG.SERVER.FOOTER}`, iconURL: CONFIG.SERVER.ICON_URL });
 
             await interaction.channel.send({ embeds: [replyEmbed] });
             return interaction.update({ content: 'Hazır yanıt kanala gönderildi.', components: [] });
@@ -400,19 +549,20 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
+    // BUTONLAR
     if (interaction.isButton()) {
         const { customId, guild, member, user, channel } = interaction;
 
         if (customId === 'btn_boost_check') {
+            await interaction.deferReply({ ephemeral: true });
             const isBooster = member.roles.cache.has(CONFIG.ROLES.BOOSTER);
-            return interaction.reply({
-                content: isBooster ? '💎 Sunucumuza takviye basmış durumdasınız, desteğiniz için teşekkür ederiz!' : '❌ Şu an aktif bir takviyeniz bulunmuyor.',
-                ephemeral: true
+            return interaction.editReply({
+                content: isBooster ? '💎 Sunucumuza takviye basmış durumdasınız, desteğiniz için teşekkür ederiz!' : '❌ Şu an aktif bir takviyeniz bulunmuyor.'
             });
         }
 
         if (customId === 'btn_ticket_claim') {
-            const isStaff = member.roles.cache.has(CONFIG.ROLES.YETKILI_EKIBI) || member.roles.cache.has(CONFIG.ROLES.GOREVLI_GENEL);
+            const isStaff = member.roles.cache.has(CONFIG.ROLES.YETKILI_EKIBI) || member.roles.cache.has(CONFIG.ROLES.GOREVLI_GENEL) || hasAdminPower(member);
             if (!isStaff) return interaction.reply({ content: 'Bu butonu sadece yetkililer kullanabilir.', ephemeral: true });
 
             const row = new ActionRowBuilder().addComponents(
@@ -420,7 +570,15 @@ client.on('interactionCreate', async (interaction) => {
                 new ButtonBuilder().setCustomId('btn_ticket_close').setLabel('Talebi Kapat').setStyle(ButtonStyle.Danger).setEmoji('🔒')
             );
             await interaction.update({ components: [row] });
-            return channel.send({ content: `🛡️ Bu talep **${user}** tarafından üstlenilmiştir.` });
+
+            const claimEmbed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setAuthor({ name: '🛡️ Destek Talebi Üstlenildi', iconURL: user.displayAvatarURL() })
+                .setDescription(`Bu destek talebi **${user}** tarafından devralınmıştır.\nEn kısa süre içerisinde sizlere yardımcı olunacaktır.`)
+                .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
+                .setTimestamp();
+
+            return channel.send({ embeds: [claimEmbed] });
         }
 
         if (customId === 'btn_ticket_close') {
@@ -443,14 +601,14 @@ client.on('interactionCreate', async (interaction) => {
                                 { name: 'Kanal', value: channel.name, inline: true },
                                 { name: 'Kapatan', value: user.tag, inline: true }
                             )
-                            .setFooter({ text: CONFIG.SERVER.FOOTER });
+                            .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL });
                         await logChannel.send({ embeds: [embed], files: [file] });
                     }
                     await channel.delete();
                 } catch (e) {
                     console.error(e);
                 }
-            }, 4000);
+            }, 3000);
         }
 
         if (customId === 'btn_create_suggestion') {
@@ -478,7 +636,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (customId.startsWith('app_accept_') || customId.startsWith('app_reject_')) {
-            if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: 'Yetkiniz yetersiz.', ephemeral: true });
+            if (!hasAdminPower(member)) return interaction.reply({ content: 'Yetkiniz yetersiz.', ephemeral: true });
 
             const isAccept = customId.startsWith('app_accept_');
             const targetUserId = customId.split('_')[2];
@@ -494,6 +652,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
+    // MODAL FORMLARI
     if (interaction.isModalSubmit()) {
         const { customId, fields, user, guild } = interaction;
 
@@ -502,7 +661,9 @@ client.on('interactionCreate', async (interaction) => {
             const ign = fields.getTextInputValue('t_ign');
             const issue = fields.getTextInputValue('t_issue');
 
-            const channelName = `${category}-${user.username}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const cleanUserName = user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const channelName = `${category}-${cleanUserName}`;
+
             const ch = await guild.channels.create({
                 name: channelName,
                 type: ChannelType.GuildText,
@@ -510,14 +671,16 @@ client.on('interactionCreate', async (interaction) => {
                 permissionOverwrites: [
                     { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
                     { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.AttachFiles] },
-                    { id: CONFIG.ROLES.GOREVLI_GENEL, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+                    { id: CONFIG.ROLES.GOREVLI_GENEL, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                    { id: CONFIG.ROLES.YONETICI, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels] }
                 ]
             });
 
             const embed = new EmbedBuilder()
                 .setColor('#2ecc71')
                 .setAuthor({ name: `Destek Talebi #${Math.floor(1000 + Math.random() * 9000)}`, iconURL: CONFIG.SERVER.ICON_URL })
-                .setDescription(`Sayın ${user}, destek talebiniz açıldı. Yetkililerimiz inceleyecektir.`)
+                .setThumbnail(CONFIG.SERVER.ICON_URL)
+                .setDescription(`Sayın ${user}, destek talebiniz başarıyla açıldı. Yetkililerimiz ilgilenecektir.`)
                 .addFields(
                     { name: '👤 Oyun İçi İsim', value: `\`${ign}\``, inline: true },
                     { name: '📂 Kategori', value: `\`${category.toUpperCase()}\``, inline: true },
@@ -542,7 +705,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setColor('#f1c40f')
                     .setAuthor({ name: `${user.username} Tarafından Yeni Öneri`, iconURL: user.displayAvatarURL() })
                     .setDescription(`> ${text}`)
-                    .setFooter({ text: CONFIG.SERVER.FOOTER })
+                    .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
                     .setTimestamp();
                 const msg = await targetChannel.send({ embeds: [embed] });
                 await msg.react('🟢');
@@ -559,7 +722,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setColor('#e67e22')
                     .setAuthor({ name: `Hata Bildirimi • ${user.username}`, iconURL: user.displayAvatarURL() })
                     .setDescription(`> ${text}`)
-                    .setFooter({ text: CONFIG.SERVER.FOOTER })
+                    .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
                     .setTimestamp();
                 const msg = await targetChannel.send({ embeds: [embed] });
                 await msg.react('✅');
@@ -577,6 +740,7 @@ client.on('interactionCreate', async (interaction) => {
 
             const embed = new EmbedBuilder()
                 .setColor('#3498db')
+                .setAuthor({ name: `${CONFIG.SERVER.NAME} • Başvuru Değerlendirme`, iconURL: CONFIG.SERVER.ICON_URL })
                 .setTitle(`Yetkili Başvurusu: ${nameAge}`)
                 .setDescription(`**Başvuran:** ${user} (${user.id})`)
                 .addFields(
@@ -586,7 +750,7 @@ client.on('interactionCreate', async (interaction) => {
                     { name: 'Neden Biz?', value: `> ${q1}`, inline: false },
                     { name: 'Hileye Müdahale Planı', value: `> ${q3}`, inline: false }
                 )
-                .setFooter({ text: CONFIG.SERVER.FOOTER });
+                .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL });
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`app_accept_${user.id}`).setLabel('Onayla').setStyle(ButtonStyle.Success),
@@ -622,7 +786,7 @@ client.on('interactionCreate', async (interaction) => {
                         { name: 'Yazılım Türü', value: hack, inline: true },
                         { name: 'Kanıt', value: kanit, inline: false }
                     )
-                    .setFooter({ text: CONFIG.SERVER.FOOTER })
+                    .setFooter({ text: CONFIG.SERVER.FOOTER, iconURL: CONFIG.SERVER.ICON_URL })
                     .setTimestamp();
                 await logCh.send({ embeds: [embed] });
             }
