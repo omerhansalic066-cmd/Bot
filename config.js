@@ -5,17 +5,19 @@ module.exports = {
     CLIENT_ID: "1558576662340313100",
     GUILD_ID: "1542137972852523090",
     PREFIX: "!",
+    OWNER_ID: "1430625826902114396", // Sadece stop/start/reload komutlarına yetkili ID
 
     SERVER: {
         NAME: "TürkiyeCraft",
         IP: "play.turkiyecraft.com.tr",
         PORT: 25565,
         VERSION: "1.19+ (Java & Bedrock)",
-        ICON_URL: "https://i.imgur.com/vH9Z1Zm.png",
+        ICON_URL: "https://cdn.discordapp.com/attachments/1542146154181951498/1562142076014166138/image_f2a40f2b.jpg?ex=6ad8e9ae&is=6ad7982e&hm=2d5e872d4ea4d017244e04cd309434180ff5ccecc16cce3b908da7b15f961756&",
         FOOTER: "Powered by ttcodersstudio | TürkiyeCraft"
     },
 
     ROLES: {
+        YONETICI: "1562139033663180915", // Sunucudaki her şeye tam yetkili rol
         KURUCU: "1542190089734590545",
         ADMIN: "1542220417182204075",
         YETKILI_EKIBI: "1555291547220574279",
