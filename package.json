@@ -1,0 +1,18 @@
+{
+  "name": "turkiyecraft-bot",
+  "version": "1.0.0",
+  "description": "TurkiyeCraft Discord Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "minecraft-server-util": "^5.4.1",
+    "discord-html-transcripts": "^3.2.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
