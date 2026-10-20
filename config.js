@@ -5,19 +5,19 @@ module.exports = {
     CLIENT_ID: "1558576662340313100",
     GUILD_ID: "1542137972852523090",
     PREFIX: "!",
-    OWNER_ID: "1430625826902114396", // Sadece stop/start/reload komutlarına yetkili ID
+    OWNER_ID: "1430625826902114396",
 
     SERVER: {
         NAME: "TürkiyeCraft",
         IP: "play.turkiyecraft.com.tr",
         PORT: 25565,
         VERSION: "1.19+ (Java & Bedrock)",
-        ICON_URL: "https://cdn.discordapp.com/attachments/1542146154181951498/1562142076014166138/image_f2a40f2b.jpg?ex=6ad8e9ae&is=6ad7982e&hm=2d5e872d4ea4d017244e04cd309434180ff5ccecc16cce3b908da7b15f961756&",
+        ICON_URL: "https://cdn.discordapp.com/attachments/1542146154181951498/1562142076014166138/image_f2a40f2b.jpg",
         FOOTER: "Powered by ttcodersstudio | TürkiyeCraft"
     },
 
     ROLES: {
-        YONETICI: "1562139033663180915", // Sunucudaki her şeye tam yetkili rol
+        YONETICI: "1562139033663180915",
         KURUCU: "1542190089734590545",
         ADMIN: "1542220417182204075",
         YETKILI_EKIBI: "1555291547220574279",
@@ -40,7 +40,7 @@ module.exports = {
         LOG_MESSAGES: "1542146177665994862",
         LOG_PUNISH: "1542146207218929724",
         LOG_TICKET: "1556241725868081222",
-        LOG_KONTROL: "1555275244980277258",
+        LOG_KONTROL: "1555275244980277258", // Yetkili Logları buraya gidecek
         WELCOME: "1542300436965490789",
         RULES: "1542141049118527568",
         BOOSTER_PANEL: "1555990802533056573",
@@ -54,6 +54,16 @@ module.exports = {
         BASVURU_FORM: "1556051449723748443",
         HESAP_ESLE: "1555916520306254027",
         TEMP_VOICE_CATEGORY: "1542194376032129125",
-        TEMP_VOICE_CREATOR: "1542194628332101694"
-    }
+        TEMP_VOICE_CREATOR: "1542194628332101694",
+        // Oyun Kanalları
+        GAME_COUNTING: "1562147448313348186",
+        GAME_WORD: "1562147475274469456"
+    },
+
+    STATUS_MESSAGES: [
+        "🌐 play.turkiyecraft.com.tr",
+        "💎 Türkiye'nin En Kaliteli Sunucusu!",
+        "🛠️ 7/24 Aktif Destek Sistemi",
+        "📈 Bot Aktif | Yardim için !yardım"
+    ]
 };
