@@ -1,4 +1,85 @@
-// BUTONLAR
+const express = require('express');
+const { 
+    Client, 
+    GatewayIntentBits, 
+    Partials, 
+    EmbedBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    StringSelectMenuBuilder, 
+    ChannelType, 
+    PermissionsBitField 
+} = require('discord.js');
+const { GoogleGenAI } = require('@google/genai');
+// Not: Eğer discord-transcripts kullanıyorsan paketini kurduğundan emin ol: npm install discord-transcripts
+const discordTranscripts = require('discord-transcripts');
+require('dotenv').config();
+
+// --- CONFIG VE YARDIMCI TANIMLAMALAR ---
+const CONFIG = {
+    TOKEN: process.env.DISCORD_TOKEN,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    SERVER: {
+        NAME: 'TürkiyeCraft',
+        ICON_URL: 'https://i.imgur.com/example.png', // Sunucu logonun linki
+        FOOTER: 'TürkiyeCraft Skyblock & BoxPvP'
+    },
+    ROLES: {
+        YETKILI_EKIBI: process.env.ROLE_YETKILI || 'ROL_ID_BURAYA',
+    },
+    CHANNELS: {
+        LOG_MESSAGES: process.env.LOG_MESSAGES || 'KANAL_ID_BURAYA',
+        LOG_KONTROL: process.env.LOG_KONTROL || 'KANAL_ID_BURAYA'
+    },
+    CATEGORIES: {
+        TICKET: process.env.TICKET_CAT || 'KATEGORI_ID_BURAYA'
+    }
+};
+
+// Yetki kontrol fonksiyonu örneği
+function hasAdminPower(member) {
+    return member.permissions.has(PermissionsBitField.Flags.Administrator);
+}
+
+// Çekiliş katılımcılarını tutmak için Map
+const giveawayParticipants = new Map();
+
+// 1. Express Sunucusu (7/24 aktif kalması ve panel pingleri için)
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('TurkiyeCraft Bot aktif ve 7/24 çalışıyor!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Web sunucusu ${PORT} portunda dinlemede.`);
+});
+
+// 2. Google Gemini AI Yapılandırması (v2.30.0)
+const ai = new GoogleGenAI({ apiKey: CONFIG.GEMINI_API_KEY });
+
+// 3. Discord Client Tanımlaması
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+    ],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+});
+
+client.once('ready', () => {
+    console.log(`Bot başarıyla giriş yaptı: ${client.user.tag}`);
+    client.user.setActivity('TürkiyeCraft Skyblock & BoxPvP', { type: 3 });
+});
+
+// 4. Etkileşimler ve Buton / Modal Yönetimi
+client.on('interactionCreate', async interaction => {
+    
+    // --- BUTONLAR ---
     if (interaction.isButton()) {
         const { customId, guild, member, channel } = interaction;
 
@@ -74,9 +155,9 @@
         }
     }
 
-    // MODAL GÖNDERİMLERİ
+    // --- MODAL GÖNDERİMLERİ ---
     if (interaction.isModalSubmit()) {
-        const { customId, member, fields } = interaction;
+        const { customId, member, fields, guild } = interaction;
 
         // Hile Kontrol Modal
         if (customId === 'modal_kont_entry') {
@@ -151,5 +232,5 @@
     }
 });
 
-// Botu Başlat
+// 5. Botu Başlat
 client.login(CONFIG.TOKEN);
