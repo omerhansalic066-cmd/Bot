@@ -1,4 +1,12 @@
-"dependencies": {
+{
+  "name": "turkiyecraft-bot",
+  "version": "1.1.0",
+  "description": "TurkiyeCraft Discord Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
     "@google/genai": "^0.2.0",
     "discord.js": "^14.18.0",
     "discord-html-transcripts": "^3.2.0",
@@ -7,3 +15,4 @@
     "express": "^4.19.2",
     "minecraft-server-util": "^5.4.1"
   }
+}
