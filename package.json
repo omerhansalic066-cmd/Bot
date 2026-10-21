@@ -7,9 +7,11 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@google/genai": "^0.1.1",
     "discord.js": "^14.14.1",
     "minecraft-server-util": "^5.4.1",
     "discord-html-transcripts": "^3.2.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
   }
 }
