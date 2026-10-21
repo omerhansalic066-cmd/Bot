@@ -9,10 +9,12 @@ const {
     ButtonStyle, 
     StringSelectMenuBuilder, 
     ChannelType, 
-    PermissionsBitField 
+    PermissionsBitField,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } = require('discord.js');
 const { GoogleGenAI } = require('@google/genai');
-// Not: Eğer discord-transcripts kullanıyorsan paketini kurduğundan emin ol: npm install discord-transcripts
 const discordTranscripts = require('discord-transcripts');
 require('dotenv').config();
 
@@ -22,7 +24,7 @@ const CONFIG = {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     SERVER: {
         NAME: 'TürkiyeCraft',
-        ICON_URL: 'https://i.imgur.com/example.png', // Sunucu logonun linki
+        ICON_URL: 'https://i.imgur.com/example.png',
         FOOTER: 'TürkiyeCraft Skyblock & BoxPvP'
     },
     ROLES: {
@@ -37,7 +39,7 @@ const CONFIG = {
     }
 };
 
-// Yetki kontrol fonksiyonu örneği
+// Yetki kontrol fonksiyonu
 function hasAdminPower(member) {
     return member.permissions.has(PermissionsBitField.Flags.Administrator);
 }
@@ -45,7 +47,7 @@ function hasAdminPower(member) {
 // Çekiliş katılımcılarını tutmak için Map
 const giveawayParticipants = new Map();
 
-// 1. Express Sunucusu (7/24 aktif kalması ve panel pingleri için)
+// 1. Express Sunucusu (7/24 aktif kalması için)
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -57,7 +59,7 @@ app.listen(PORT, () => {
     console.log(`Web sunucusu ${PORT} portunda dinlemede.`);
 });
 
-// 2. Google Gemini AI Yapılandırması (v2.30.0)
+// 2. Google Gemini AI Yapılandırması
 const ai = new GoogleGenAI({ apiKey: CONFIG.GEMINI_API_KEY });
 
 // 3. Discord Client Tanımlaması
@@ -76,9 +78,50 @@ client.once('ready', () => {
     client.user.setActivity('TürkiyeCraft Skyblock & BoxPvP', { type: 3 });
 });
 
-// 4. Etkileşimler ve Buton / Modal Yönetimi
+// 4. Klasik Mesaj Yanıtları (sa -> as vb.)
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
+    const content = message.content.toLowerCase();
+    if (content === 'sa' || content === 'selamun aleykum') {
+        await message.reply('Aleykümselam, hoş geldin! 🚀');
+    }
+});
+
+// 5. Etkileşimler (Butonlar, Menüler, Modallar)
 client.on('interactionCreate', async interaction => {
     
+    // --- SELECT MENU (Kategori Seçimi) ---
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId === 'menu_ticket_category') {
+            const selectedCategory = interaction.values[0];
+            
+            const modal = new ModalBuilder()
+                .setCustomId(`modal_ticket_open_${selectedCategory}`)
+                .setTitle('Destek Talebi Oluştur');
+
+            const ignInput = new TextInputBuilder()
+                .setCustomId('t_ign')
+                .setLabel('Minecraft Oyun Adın (IGN)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('Örn: omerhansalic')
+                .setRequired(true);
+
+            const issueInput = new TextInputBuilder()
+                .setCustomId('t_issue')
+                .setLabel('Yaşadığın Sorun / Detay')
+                .setStyle(TextInputStyle.Paragraph)
+                .setPlaceholder('Lütfen sorununuzu detaylıca yazın...')
+                .setRequired(true);
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(ignInput),
+                new ActionRowBuilder().addComponents(issueInput)
+            );
+
+            return await interaction.showModal(modal);
+        }
+    }
+
     // --- BUTONLAR ---
     if (interaction.isButton()) {
         const { customId, guild, member, channel } = interaction;
@@ -232,5 +275,5 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// 5. Botu Başlat
+// 6. Botu Başlat
 client.login(CONFIG.TOKEN);
