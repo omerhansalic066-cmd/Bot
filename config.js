@@ -5,7 +5,12 @@ module.exports = {
     CLIENT_ID: "1558576662340313100",
     GUILD_ID: "1542137972852523090",
     PREFIX: "!",
-    OWNER_ID: "1430625826902114396",
+    
+    // Hem seni hem de mevcut kurucu ID'sini ekledik
+    OWNER_ID: [
+        "1429198833832951808", // Senin Discord ID'n
+        "1430625826902114396"  // Diğer Kurucu ID'si
+    ],
 
     SERVER: {
         NAME: "TürkiyeCraft",
@@ -40,7 +45,7 @@ module.exports = {
         LOG_MESSAGES: "1542146177665994862",
         LOG_PUNISH: "1542146207218929724",
         LOG_TICKET: "1556241725868081222",
-        LOG_KONTROL: "1555275244980277258", // Yetkili Logları buraya gidecek
+        LOG_KONTROL: "1555275244980277258",
         WELCOME: "1542300436965490789",
         RULES: "1542141049118527568",
         BOOSTER_PANEL: "1555990802533056573",
@@ -55,7 +60,6 @@ module.exports = {
         HESAP_ESLE: "1555916520306254027",
         TEMP_VOICE_CATEGORY: "1542194376032129125",
         TEMP_VOICE_CREATOR: "1542194628332101694",
-        // Oyun Kanalları
         GAME_COUNTING: "1562147448313348186",
         GAME_WORD: "1562147475274469456"
     },
