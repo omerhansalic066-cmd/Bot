@@ -1,12 +1,4 @@
-new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('app_age').setLabel('Yaşınız').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('app_time').setLabel('Günlük Aktiflik Süreniz').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('app_why').setLabel('Neden Sizi Seçmeliyiz?').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-            return interaction.showModal(modal);
-        }
-    }
-
-    // --- MODAL GÖNDERİMLERİ ---
+// --- MODAL GÖNDERİMLERİ ---
     if (interaction.isModalSubmit()) {
         const { customId, member, fields, guild } = interaction;
 
@@ -17,7 +9,7 @@ new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('app_age
             const hack = fields.getTextInputValue('kont_hack') || 'Belirtilmedi';
             const kanit = fields.getTextInputValue('kont_kanit') || 'Yok';
 
-            const logCh = guild.channels.cache.get(CONFIG.CHANNELS.LOG_PUNISH);
+            const logCh = guild.channels.cache.get(CONFIG.CHANNELS.LOG_KONTROL);
             if (logCh) {
                 const embed = new EmbedBuilder()
                     .setColor('#e74c3c')
@@ -40,7 +32,7 @@ new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('app_age
         // Öneri Gönderimi
         if (customId === 'modal_suggestion') {
             const text = fields.getTextInputValue('s_text');
-            const sugCh = guild.channels.cache.get(CONFIG.CHANNELS.SUGGESTIONS);
+            const sugCh = guild.channels.cache.get(CONFIG.CHANNELS.ONERI_LISTE);
             
             const embed = new EmbedBuilder()
                 .setColor('#3498db')
@@ -60,7 +52,7 @@ new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('app_age
         // Hata Bildirimi
         if (customId === 'modal_bug') {
             const text = fields.getTextInputValue('b_text');
-            const bugCh = guild.channels.cache.get(CONFIG.CHANNELS.BUGS);
+            const bugCh = guild.channels.cache.get(CONFIG.CHANNELS.HATA_LISTE);
             
             const embed = new EmbedBuilder()
                 .setColor('#e74c3c')
@@ -78,7 +70,7 @@ new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('app_age
             const age = fields.getTextInputValue('app_age');
             const time = fields.getTextInputValue('app_time');
             const why = fields.getTextInputValue('app_why');
-            const appCh = guild.channels.cache.get(CONFIG.CHANNELS.APPLICATIONS);
+            const appCh = guild.channels.cache.get(CONFIG.CHANNELS.BASVURU_FORM);
 
             const embed = new EmbedBuilder()
                 .setColor('#9b59b6')
@@ -108,7 +100,7 @@ new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('app_age
                 const ticketChannel = await guild.channels.create({
                     name: ticketChannelName,
                     type: ChannelType.GuildText,
-                    parent: CONFIG.CATEGORIES.TICKET || null,
+                    parent: CONFIG.CHANNELS.TICKET_CATEGORY || null,
                     permissionOverwrites: [
                         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
                         { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
@@ -141,7 +133,3 @@ new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('app_age
             }
         }
     }
-});
-
-// Bot Giriş İşlemi
-client.login(CONFIG.TOKEN);
